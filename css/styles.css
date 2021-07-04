@@ -67,7 +67,7 @@ hr {
   background-color: currentColor;
   border: 0;
   opacity: 0.25;
-}
+}font-family: 'Bungee Inline', cursive;
 
 hr:not([size]) {
   height: 1px;
