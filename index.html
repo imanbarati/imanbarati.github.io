@@ -79,9 +79,20 @@
         .suggestions div:hover {
             background: #f0f0f0;
         }
+iframe {
+  border: 1px solid black;
+  width: 100%; /* takes precedence over the width set with the HTML width attribute */
+}
 
 </style>
-</head><body><!----><form>
+</head><body><!----><iframe
+  id="inlineFrameExample"
+  title="Inline Frame Example"
+  width="300"
+  height="200"
+  src="https://manati.ir">
+</iframe>
+<form>
       <label for="fruit-input">Choose a fruit:</label>
     <input type="text" id="fruit-input" autocomplete="off">
         <input type="hidden" id="guildcode" name="guildcode" value="">
