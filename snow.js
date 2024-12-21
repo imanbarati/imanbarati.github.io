@@ -1,6 +1,5 @@
 /**
- * Snow Theme - Add beautiful snowfall effect to any website
- * https://github.com/ddosnotification/snow-theme
+
  * MIT License
  */
 (function() {
