@@ -15,6 +15,7 @@
         <br>
         <button type="submit">Submit</button>
     </form>
+    <div id="result"></div>
 
     <script>
         async function main() {
@@ -42,29 +43,4 @@
                             "referer": "https//pna.co.ir/PosRequest/Register",
                             "accept-encoding": "gzip, deflate, br, zstd",
                             "accept-language": "en-US,en;q=0.9",
-                            "cookie": "__RequestVerificationToken=hUpwEPUthtM-uUFBdHfyk2vI37C2iEmdif180mbILy6mdivuMoNPV9NiOvtwoHqSJcyuW0C1-Ir5exBrVO3O9eErfo0wMQYkrpqTFkXGRlg1; cookiesession1=678B287F3E5CBD72DAB2CDE771E12822"
-                        },
-                        body: `------WebKitFormBoundaryMIVxGkLBw4m7MmG2\r\nContent-Disposition: form-data; name="nationalCode"\r\n\r\n${nationalCode}\r\n------WebKitFormBoundaryMIVxGkLBw4m7MmG2\r\nContent-Disposition: form-data; name="birthDate"\r\n\r\n${birthDate}\r\n------WebKitFormBoundaryMIVxGkLBw4m7MmG2--\r\n`
-                    }
-                );
-                const body = await response.text();
-                return {
-                    shenasnameno: JSON.parse(body)["ShenasnameNo"],
-                    status: JSON.parse(body)["Status"],
-                    variable: response.headers.get("expires")
-                };
-            }
-
-            document.getElementById("myForm").addEventListener("submit", async (event) => {
-                event.preventDefault();
-                const nationalCode = document.getElementById("nationalCode").value;
-                const birthDate = document.getElementById("birthDate").value;
-                const result = await executeRequest0001({ nationalCode, birthDate });
-                console.log(result);
-            });
-        }
-
-        main();
-    </script>
-</body>
-</html>
+                            "cookie": "__RequestVerificationToken=hUpwEPUthtM-uUFBdHfyk2vI37C2iEmdif180mbILy6mdivuMoNPV9NiOvtwoHqSJcy
