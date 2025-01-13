@@ -22,7 +22,7 @@
             event.preventDefault();
             const formData = new FormData(event.target);
 
-            const response = await fetch("YOUR_CLOUDFLARE_WORKER_URL", {
+            const response = await fetch("https://soft-mud-5bdd.imanauditore.workers.dev/", {
                 method: "POST",
                 body: formData
             });
