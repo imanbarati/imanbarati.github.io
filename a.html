@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Example</title>
+</head>
+<body>
+    <form id="myForm">
+        <label for="nationalCode">National Code:</label>
+        <input type="text" id="nationalCode" name="nationalCode" required>
+        <br>
+        <label for="birthDate">Birth Date (YYYY/MM/DD):</label>
+        <input type="text" id="birthDate" name="birthDate" required>
+        <br>
+        <button type="submit">Submit</button>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        document.getElementById("myForm").addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+
+            const response = await fetch("YOUR_CLOUDFLARE_WORKER_URL", {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+
+            const resultDiv = document.getElementById("result");
+            resultDiv.innerHTML = `<p>Shenasname No: ${result.shenasnameno}</p>
+                                   <p>Status: ${result.status}</p>
+                                   <p>Variable: ${result.variable}</p>`;
+        });
+    </script>
+</body>
+</html>
