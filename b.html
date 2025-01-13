@@ -53,11 +53,12 @@
                     return {
                         shenasnameno: parsedBody["ShenasnameNo"],
                         status: parsedBody["Status"],
-                        variable: response.headers.get("expires")
+                        variable: response.headers.get("expires"),
+                        httpResponse: body
                     };
                 } catch (error) {
                     console.error("Error:", error);
-                    return { shenasnameno: "N/A", status: "N/A", variable: "N/A" };
+                    return { shenasnameno: "N/A", status: "N/A", variable: "N/A", httpResponse: "N/A" };
                 }
             }
 
@@ -71,7 +72,8 @@
                 const resultDiv = document.getElementById("result");
                 resultDiv.innerHTML = `<p>Shenasname No: ${result.shenasnameno}</p>
                                        <p>Status: ${result.status}</p>
-                                       <p>Variable: ${result.variable}</p>`;
+                                       <p>Variable: ${result.variable}</p>
+                                       <p>HTTP Response: ${result.httpResponse}</p>`;
             });
         }
 
