@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        /* Abstract background styling */
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, 
+                #667eea 0%, 
+                #764ba2 50%, 
+                #6b8dd6 100%);
+            background-size: 200% 200%;
+            animation: gradientFlow 15s ease infinite;
+        }
+
+        /* Animation for abstract background */
+        @keyframes gradientFlow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Button styling */
+        .home-button {
+            padding: 15px 30px;
+            font-size: 18px;
+            font-family: Arial, sans-serif;
+            background-color: #ffffff;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: #333;
+        }
+
+        /* Button hover effect */
+        .home-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            background-color: #f0f0f0;
+        }
+
+        /* Button active effect */
+        .home-button:active {
+            transform: translateY(1px);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <a href="/membership/bank/PaymentTerminal/terminal/" class="home-button">ورود</a>
+</body>
+</html>
