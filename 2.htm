@@ -1,0 +1,343 @@
+project/
+├── config/
+│   └── database.js
+├── models/
+│   ├── User.js
+│   └── Customer.js
+├── routes/
+│   ├── auth.js
+│   └── customer.js
+├── public/
+│   ├── css/
+│   │   └── style.css
+│   └── uploads/
+├── views/
+│   ├── login.ejs
+│   ├── signup.ejs
+│   ├── dashboard.ejs
+│   └── customerForm.ejs
+├── package.json
+└── server.js
+
+  package nson
+  {
+  "name": "mongodb-web-app",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "mongodb": "^6.3.0",
+    "multer": "^1.4.5-lts.1"
+  }
+  }
+
+databas js
+const { MongoClient } = require('mongodb');
+
+const uri = 'mongodb://localhost:27017';
+const client = new MongoClient(uri);
+
+async function connectDB() {
+    try {
+        await client.connect();
+        console.log('Connected to MongoDB');
+        return client.db('webapp');
+    } catch (error) {
+        console.error('Database connection error:', error);
+    }
+}
+
+module.exports = connectDB;
+
+
+module userconst bcrypt = require('bcrypt');
+
+class User {
+    constructor(db) {
+        this.collection = db.collection('users');
+    }
+
+    async create(username, password) {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const user = {
+            username,
+            password: hashedPassword,
+            createdAt: new Date()
+        };
+        return await this.collection.insertOne(user);
+    }
+
+    async findByUsername(username) {
+        return await this.collection.findOne({ username });
+    }
+
+    async comparePassword(password, hashedPassword) {
+        return await bcrypt.compare(password, hashedPassword);
+    }
+}
+
+module.exports = User;
+
+
+
+module customer
+class Customer {
+    constructor(db) {
+        this.collection = db.collection('customers');
+    }
+
+    async create(data) {
+        const customer = {
+            ...data,
+            createdAt: new Date()
+        };
+        return await this.collection.insertOne(customer);
+    }
+
+    async findAll() {
+        return await this.collection.find({}).toArray();
+    }
+}
+
+module.exports = Customer;
+
+
+const express = require('express');
+const router = express.Router();
+const User = require('../models/User');
+
+router.get('/login', (req, res) => {
+    res.render('login');
+});
+
+router.get('/signup', (req, res) => {
+    res.render('signup');
+});
+
+router.post('/signup', async (req, res) => {
+    const { username, password } = req.body;
+    const db = req.app.locals.db;
+    const userModel = new User(db);
+
+    try {
+        await userModel.create(username, password);
+        res.redirect('/login');
+    } catch (error) {
+        res.render('signup', { error: 'Error creating user' });
+    }
+});
+
+router.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    const db = req.app.locals.db;
+    const userModel = new User(db);
+
+    try {
+        const user = await userModel.findByUsername(username);
+        if (user && await userModel.comparePassword(password, user.password)) {
+            req.session.userId = user._id;
+            res.redirect('/dashboard');
+        } else {
+            res.render('login', { error: 'Invalid credentials' });
+        }
+    } catch (error) {
+        res.render('login', { error: 'Login error' });
+    }
+});
+
+router.get('/logout', (req, res) => {
+    req.session.destroy();
+    res.redirect('/login');
+});
+
+module.exports = router;
+
+
+server
+const express = require('express');
+const session = require('express-session');
+const connectDB = require('./config/database');
+const authRoutes = require('./routes/auth');
+const customerRoutes = require('./routes/customer');
+
+const app = express();
+
+app.set('view engine', 'ejs');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
+app.use(session({
+    secret: 'your-secret-key',
+    resave: false,
+    saveUninitialized: false
+}));
+
+async function startServer() {
+    const db = await connectDB();
+    app.locals.db = db;
+
+    app.use('/', authRoutes);
+    app.use('/customer', customerRoutes);
+
+    app.get('/dashboard', async (req, res) => {
+        if (!req.session.userId) return res.redirect('/login');
+        const customerModel = new Customer(db);
+        const customers = await customerModel.findAll();
+        res.render('dashboard', { customers });
+    });
+
+    app.listen(3000, () => {
+        console.log('Server running on port 3000');
+    });
+}
+
+startServer();
+
+
+view login<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Login</h1>
+    <% if (error) { %>
+        <p class="error"><%= error %></p>
+    <% } %>
+    <form method="POST" action="/login">
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+    </form>
+    <p>Don't have an account? <a href="/signup">Sign up</a></p>
+</body>
+</html>
+
+viewsignup
+  <!DOCTYPE html>
+<html>
+<head>
+    <title>Signup</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Signup</h1>
+    <% if (error) { %>
+        <p class="error"><%= error %></p>
+    <% } %>
+    <form method="POST" action="/signup">
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Sign up</button>
+    </form>
+    <p>Already have an account? <a href="/login">Login</a></p>
+</body>
+</html>
+
+  
+  viewdashbaord
+
+  <!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Dashboard</h1>
+    <a href="/customer/form">Add Customer</a>
+    <a href="/logout">Logout</a>
+    
+    <h2>Customers</h2>
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Phone</th>
+            <th>Document</th>
+        </tr>
+        <% customers.forEach(customer => { %>
+            <tr>
+                <td><%= customer.name %></td>
+                <td><%= customer.email %></td>
+                <td><%= customer.phone %></td>
+                <td>
+                    <% if (customer.document) { %>
+                        <a href="/uploads/<%= customer.document %>">View</a>
+                    <% } %>
+                </td>
+            </tr>
+        <% }) %>
+    </table>
+</body>
+</html>
+
+viewcustoemrform
+  <!DOCTYPE html>
+<html>
+<head>
+    <title>Customer Form</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Add Customer</h1>
+    <% if (error) { %>
+        <p class="error"><%= error %></p>
+    <% } %>
+    <form method="POST" action="/customer/form" enctype="multipart/form-data">
+        <input type="text" name="name" placeholder="Name" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="tel" name="phone" placeholder="Phone" required>
+        <input type="file" name="document">
+        <button type="submit">Submit</button>
+    </form>
+    <a href="/dashboard">Back to Dashboard</a>
+</body>
+</html>
+
+
+
+stylecss
+body {
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+input, button {
+    display: block;
+    margin: 10px 0;
+    padding: 5px;
+}
+
+.error {
+    color: red;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+  }
+
+  
+
+
+  
