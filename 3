@@ -1,0 +1,349 @@
+package
+{
+  "name": "mongodb-web-app",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "mongodb": "^6.3.0",
+    "multer": "^1.4.5-lts.1",
+    "vhost": "^3.0.2"
+  }
+}
+
+
+server
+const express = require('express');
+const session = require('express-session');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const connectDB = require('./config/database');
+const { router: authRoutes, isAuthenticated, requirePermission, subdomainHandler } = require('./routes/auth');
+const customerRoutes = require('./routes/customer');
+
+// Load SSL certificates (for development)
+const privateKey = fs.readFileSync('certs/server.key', 'utf8');
+const certificate = fs.readFileSync('certs/server.cert', 'utf8');
+const credentials = { key: privateKey, cert: certificate };
+
+const app = express();
+
+app.set('trust proxy', 1);
+app.set('view engine', 'ejs');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
+app.use(session({
+    secret: 'your-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+        secure: true, // Only send cookie over HTTPS
+        domain: '.localhost', // For subdomains
+        httpOnly: true, // Prevent XSS
+        sameSite: 'lax' // CSRF protection
+    }
+}));
+
+// Middleware to redirect HTTP to HTTPS
+function redirectToHttps(req, res, next) {
+    if (!req.secure) {
+        return res.redirect(301, `https://${req.headers.host}${req.url}`);
+    }
+    next();
+}
+
+async function startServer() {
+    const db = await connectDB();
+    app.locals.db = db;
+
+    app.use(subdomainHandler);
+    app.use(redirectToHttps);
+    app.use('/', authRoutes);
+    app.use('/customer', customerRoutes);
+
+    app.get('/dashboard', isAuthenticated, async (req, res) => {
+        const customerModel = new Customer(db);
+        let customers = [];
+        
+        try {
+            const viewingUser = req.subdomainUser || await new User(db).findById(req.session.userId);
+            
+            if (hasPermission(req.session.role, 'customers:read_all')) {
+                customers = await customerModel.findAll();
+            } else if (hasPermission(req.session.role, 'customers:read_own')) {
+                customers = await customerModel.findByUserId(viewingUser._id);
+            }
+
+            res.render('dashboard', { 
+                customers,
+                role: req.session.role,
+                canDelete: hasPermission(req.session.role, 'customers:delete'),
+                customDomain: viewingUser.customDomain,
+                viewingUser: viewingUser.username
+            });
+        } catch (error) {
+            res.render('error', { message: 'Error loading dashboard' });
+        }
+    });
+
+    app.get('/settings', isAuthenticated, async (req, res) => {
+        const userModel = new User(db);
+        const user = await userModel.findById(req.session.userId);
+        res.render('settings', { customDomain: user.customDomain });
+    });
+
+    app.post('/settings', isAuthenticated, async (req, res) => {
+        const { customDomain } = req.body;
+        const userModel = new User(db);
+        
+        try {
+            const existing = await userModel.findByCustomDomain(customDomain);
+            if (existing && existing._id.toString() !== req.session.userId.toString()) {
+                throw new Error('Domain already taken');
+            }
+            await userModel.updateCustomDomain(req.session.userId, customDomain);
+            req.session.customDomain = customDomain;
+            res.redirect('/dashboard');
+        } catch (error) {
+            res.render('settings', { 
+                customDomain: req.session.customDomain,
+                error: error.message 
+            });
+        }
+    });
+
+    // Create HTTP server for redirection
+    const httpServer = http.createServer((req, res) => {
+        res.writeHead(301, { Location: `https://${req.headers.host}${req.url}` });
+        res.end();
+    });
+
+    // Create HTTPS server
+    const httpsServer = https.createServer(credentials, app);
+
+    httpServer.listen(80, () => {
+        console.log('HTTP Server running on port 80 for redirection');
+    });
+
+    httpsServer.listen(443, () => {
+        console.log('HTTPS Server running on port 443');
+    });
+}
+
+startServer();
+
+
+bash
+# Create a directory for certificates
+mkdir certs
+cd certs
+
+# Generate a self-signed certificate (valid for 365 days)
+openssl req -nodes -new -x509 -keyout server.key -out server.cert -days 365 -subj "/CN=localhost"
+
+
+viewsettingejs 
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Settings</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Settings</h1>
+    <% if (error) { %>
+        <p class="error"><%= error %></p>
+    <% } %>
+    <form method="POST" action="/settings">
+        <label>Custom Domain</label>
+        <input type="text" name="customDomain" value="<%= customDomain %>" required>
+        <button type="submit">Update</button>
+    </form>
+    <a href="/dashboard">Back to Dashboard</a>
+</body>
+</html>
+
+
+viewdashboardejs
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Dashboard</h1>
+    <p>Role: <%= role %> | Viewing: <%= viewingUser %>'s Dashboard</p>
+    <p>Custom URL: <%= customDomain %>.localhost:3000</p>
+    <a href="/customer/form">Add Customer</a>
+    <a href="/settings">Settings</a>
+    <a href="/logout">Logout</a>
+    
+    <h2>Customers</h2>
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Phone</th>
+            <th>Document</th>
+            <th>User ID</th>
+            <% if (canDelete) { %>
+                <th>Actions</th>
+            <% } %>
+        </tr>
+        <% customers.forEach(customer => { %>
+            <tr>
+                <td><%= customer.name %></td>
+                <td><%= customer.email %></td>
+                <td><%= customer.phone %></td>
+                <td>
+                    <% if (customer.document) { %>
+                        <a href="/uploads/<%= customer.document %>">View</a>
+                    <% } %>
+                </td>
+                <td><%= customer.userId %></td>
+                <% if (canDelete) { %>
+                    <td>
+                        <a href="/customer/delete/<%= customer._id %>" 
+                           onclick="return confirm('Are you sure?')">Delete</a>
+                    </td>
+                <% } %>
+            </tr>
+        <% }) %>
+    </table>
+</body>
+</html>
+
+viewsignup
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Signup</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Signup</h1>
+    <% if (error) { %>
+        <p class="error"><%= error %></p>
+    <% } %>
+    <form method="POST" action="/signup">
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <input type="text" name="customDomain" placeholder="Custom Domain (optional)">
+        <button type="submit">Sign up</button>
+    </form>
+    <p>Already have an account? <a href="/login">Login</a></p>
+</body>
+</html>
+
+
+
+
+
+routesauth
+const express = require('express');
+const router = express.Router();
+const User = require('../models/User');
+const { hasPermission } = require('../config/permissions');
+
+router.get('/login', (req, res) => {
+    res.render('login');
+});
+
+router.get('/signup', (req, res) => {
+    res.render('signup');
+});
+
+router.post('/signup', async (req, res) => {
+    const { username, password, customDomain } = req.body;
+    const db = req.app.locals.db;
+    const userModel = new User(db);
+
+    try {
+        // Check if custom domain is already taken
+        if (customDomain) {
+            const existing = await userModel.findByCustomDomain(customDomain);
+            if (existing) throw new Error('Custom domain already taken');
+        }
+        
+        await userModel.create(username, password, 'user', customDomain);
+        res.redirect('/login');
+    } catch (error) {
+        res.render('signup', { error: error.message || 'Error creating user' });
+    }
+});
+
+router.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    const db = req.app.locals.db;
+    const userModel = new User(db);
+
+    try {
+        const user = await userModel.findByUsername(username);
+        if (user && await userModel.comparePassword(password, user.password)) {
+            req.session.userId = user._id;
+            req.session.role = user.role;
+            req.session.customDomain = user.customDomain;
+            res.redirect('/dashboard');
+        } else {
+            res.render('login', { error: 'Invalid credentials' });
+        }
+    } catch (error) {
+        res.render('login', { error: 'Login error' });
+    }
+});
+
+router.get('/logout', (req, res) => {
+    req.session.destroy();
+    res.redirect('/login');
+});
+
+// Middleware
+function isAuthenticated(req, res, next) {
+    if (req.session.userId) return next();
+    res.redirect('/login');
+}
+
+function requirePermission(permission) {
+    return (req, res, next) => {
+        if (!req.session.userId) {
+            return res.redirect('/login');
+        }
+        
+        if (!hasPermission(req.session.role, permission)) {
+            return res.status(403).render('error', { 
+                message: 'Insufficient permissions' 
+            });
+        }
+        next();
+    };
+}
+
+// Subdomain middleware
+async function subdomainHandler(req, res, next) {
+    const host = req.headers.host;
+    const parts = host.split('.');
+    
+    if (parts.length >= 3) { // subdomain.domain.tld
+        const subdomain = parts[0];
+        const db = req.app.locals.db;
+        const userModel = new User(db);
+        
+        const user = await userModel.findByCustomDomain(subdomain);
+        if (user) {
+            req.subdomainUser = user;
+        }
+    }
+    next();
+}
+
+module.exports = { router, isAuthenticated, requirePermission, subdomainHandler };
+
+
