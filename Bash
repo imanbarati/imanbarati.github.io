@@ -1,0 +1,679 @@
+chmod +x setup.sh
+./setup.sh
+#!/bin/bash
+
+# Exit on any error
+set -e
+
+# Create project structure
+echo "Creating directory structure..."
+mkdir -p config models routes public/css public/uploads views certs
+
+# Create package.json
+echo "Creating package.json..."
+cat > package.json << 'EOF'
+{
+  "name": "mongodb-web-app",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "mongodb": "^6.3.0",
+    "multer": "^1.4.5-lts.1",
+    "vhost": "^3.0.2"
+  }
+}
+EOF
+
+# Create config files
+echo "Creating config files..."
+cat > config/database.js << 'EOF'
+const { MongoClient } = require('mongodb');
+
+const uri = 'mongodb://localhost:27017';
+const client = new MongoClient(uri);
+
+async function connectDB() {
+    try {
+        await client.connect();
+        console.log('Connected to MongoDB');
+        return client.db('webapp');
+    } catch (error) {
+        console.error('Database connection error:', error);
+    }
+}
+
+module.exports = connectDB;
+EOF
+
+cat > config/permissions.js << 'EOF'
+const permissions = {
+    'customers:read_all': ['admin', 'manager'],
+    'customers:read_own': ['admin', 'manager', 'user'],
+    'customers:create': ['admin', 'manager', 'user'],
+    'customers:delete': ['admin'],
+    'users:manage': ['admin'],
+};
+
+const roleHierarchy = {
+    admin: ['manager', 'user'],
+    manager: ['user'],
+    user: []
+};
+
+function hasPermission(userRole, permission) {
+    if (permissions[permission] && permissions[permission].includes(userRole)) {
+        return true;
+    }
+    
+    const inheritedRoles = roleHierarchy[userRole] || [];
+    return inheritedRoles.some(role => 
+        permissions[permission] && permissions[permission].includes(role)
+    );
+}
+
+module.exports = { permissions, hasPermission };
+EOF
+
+# Create model files
+echo "Creating model files..."
+cat > models/User.js << 'EOF'
+const bcrypt = require('bcrypt');
+
+class User {
+    constructor(db) {
+        this.collection = db.collection('users');
+    }
+
+    async create(username, password, role = 'user', customDomain = null) {
+        const validRoles = ['admin', 'manager', 'user'];
+        if (!validRoles.includes(role)) {
+            throw new Error('Invalid role');
+        }
+        
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const user = {
+            username,
+            password: hashedPassword,
+            role,
+            customDomain: customDomain || username.toLowerCase(),
+            createdAt: new Date()
+        };
+        return await this.collection.insertOne(user);
+    }
+
+    async findByUsername(username) {
+        return await this.collection.findOne({ username });
+    }
+
+    async findById(id) {
+        return await this.collection.findOne({ _id: id });
+    }
+
+    async findByCustomDomain(domain) {
+        return await this.collection.findOne({ customDomain: domain.toLowerCase() });
+    }
+
+    async comparePassword(password, hashedPassword) {
+        return await bcrypt.compare(password, hashedPassword);
+    }
+
+    async updateCustomDomain(id, newDomain) {
+        return await this.collection.updateOne(
+            { _id: id },
+            { $set: { customDomain: newDomain.toLowerCase() } }
+        );
+    }
+}
+
+module.exports = User;
+EOF
+
+cat > models/Customer.js << 'EOF'
+class Customer {
+    constructor(db) {
+        this.collection = db.collection('customers');
+    }
+
+    async create(data) {
+        const customer = {
+            ...data,
+            createdAt: new Date()
+        };
+        return await this.collection.insertOne(customer);
+    }
+
+    async findAll() {
+        return await this.collection.find({}).toArray();
+    }
+
+    async findByUserId(userId) {
+        return await this.collection.find({ userId }).toArray();
+    }
+}
+
+module.exports = Customer;
+EOF
+
+# Create route files
+echo "Creating route files..."
+cat > routes/auth.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const User = require('../models/User');
+const { hasPermission } = require('../config/permissions');
+
+router.get('/login', (req, res) => {
+    res.render('login');
+});
+
+router.get('/signup', (req, res) => {
+    res.render('signup');
+});
+
+router.post('/signup', async (req, res) => {
+    const { username, password, customDomain } = req.body;
+    const db = req.app.locals.db;
+    const userModel = new User(db);
+
+    try {
+        if (customDomain) {
+            const existing = await userModel.findByCustomDomain(customDomain);
+            if (existing) throw new Error('Custom domain already taken');
+        }
+        
+        await userModel.create(username, password, 'user', customDomain);
+        res.redirect('/login');
+    } catch (error) {
+        res.render('signup', { error: error.message || 'Error creating user' });
+    }
+});
+
+router.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    const db = req.app.locals.db;
+    const userModel = new User(db);
+
+    try {
+        const user = await userModel.findByUsername(username);
+        if (user && await userModel.comparePassword(password, user.password)) {
+            req.session.userId = user._id;
+            req.session.role = user.role;
+            req.session.customDomain = user.customDomain;
+            res.redirect('/dashboard');
+        } else {
+            res.render('login', { error: 'Invalid credentials' });
+        }
+    } catch (error) {
+        res.render('login', { error: 'Login error' });
+    }
+});
+
+router.get('/logout', (req, res) => {
+    req.session.destroy();
+    res.redirect('/login');
+});
+
+function isAuthenticated(req, res, next) {
+    if (req.session.userId) return next();
+    res.redirect('/login');
+}
+
+function requirePermission(permission) {
+    return (req, res, next) => {
+        if (!req.session.userId) {
+            return res.redirect('/login');
+        }
+        
+        if (!hasPermission(req.session.role, permission)) {
+            return res.status(403).render('error', { 
+                message: 'Insufficient permissions' 
+            });
+        }
+        next();
+    };
+}
+
+async function subdomainHandler(req, res, next) {
+    const host = req.headers.host;
+    const parts = host.split('.');
+    
+    if (parts.length >= 3) {
+        const subdomain = parts[0];
+        const db = req.app.locals.db;
+        const userModel = new User(db);
+        
+        const user = await userModel.findByCustomDomain(subdomain);
+        if (user) {
+            req.subdomainUser = user;
+        }
+    }
+    next();
+}
+
+module.exports = { router, isAuthenticated, requirePermission, subdomainHandler };
+EOF
+
+cat > routes/customer.js << 'EOF'
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const Customer = require('../models/Customer');
+const { requirePermission } = require('./auth');
+
+const storage = multer.diskStorage({
+    destination: 'public/uploads/',
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + '-' + file.originalname);
+    }
+});
+const upload = multer({ storage });
+
+router.get('/form', requirePermission('customers:create'), (req, res) => {
+    res.render('customerForm');
+});
+
+router.post('/form', 
+    requirePermission('customers:create'), 
+    upload.single('document'), 
+    async (req, res) => {
+        const db = req.app.locals.db;
+        const customerModel = new Customer(db);
+
+        const customerData = {
+            name: req.body.name,
+            email: req.body.email,
+            phone: req.body.phone,
+            document: req.file ? req.file.filename : null,
+            userId: req.session.userId
+        };
+
+        try {
+            await customerModel.create(customerData);
+            res.redirect('/dashboard');
+        } catch (error) {
+            res.render('customerForm', { error: 'Error saving customer data' });
+        }
+    }
+);
+
+router.get('/delete/:id', 
+    requirePermission('customers:delete'), 
+    async (req, res) => {
+        const db = req.app.locals.db;
+        const customerModel = new Customer(db);
+        
+        try {
+            await customerModel.collection.deleteOne({ _id: new db.ObjectId(req.params.id) });
+            res.redirect('/dashboard');
+        } catch (error) {
+            res.render('error', { message: 'Error deleting customer' });
+        }
+    }
+);
+
+module.exports = router;
+EOF
+
+# Create server.js
+echo "Creating server.js..."
+cat > server.js << 'EOF'
+const express = require('express');
+const session = require('express-session');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const connectDB = require('./config/database');
+const { router: authRoutes, isAuthenticated, requirePermission, subdomainHandler } = require('./routes/auth');
+const customerRoutes = require('./routes/customer');
+
+const privateKey = fs.readFileSync('certs/server.key', 'utf8');
+const certificate = fs.readFileSync('certs/server.cert', 'utf8');
+const credentials = { key: privateKey, cert: certificate };
+
+const app = express();
+
+app.set('trust proxy', 1);
+app.set('view engine', 'ejs');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
+app.use(session({
+    secret: 'your-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+        secure: true,
+        domain: '.localhost',
+        httpOnly: true,
+        sameSite: 'lax'
+    }
+}));
+
+function hstsMiddleware(req, res, next) {
+    if (req.secure) {
+        res.setHeader('Strict-Transport-Security', 
+            'max-age=31536000; includeSubDomains; preload'
+        );
+    }
+    next();
+}
+
+function redirectToHttps(req, res, next) {
+    if (!req.secure) {
+        return res.redirect(301, `https://${req.headers.host}${req.url}`);
+    }
+    next();
+}
+
+async function startServer() {
+    const db = await connectDB();
+    app.locals.db = db;
+
+    app.use(hstsMiddleware);
+    app.use(subdomainHandler);
+    app.use(redirectToHttps);
+    
+    app.use('/', authRoutes);
+    app.use('/customer', customerRoutes);
+
+    app.get('/dashboard', isAuthenticated, async (req, res) => {
+        const customerModel = new Customer(db);
+        let customers = [];
+        
+        try {
+            const viewingUser = req.subdomainUser || await new User(db).findById(req.session.userId);
+            
+            if (hasPermission(req.session.role, 'customers:read_all')) {
+                customers = await customerModel.findAll();
+            } else if (hasPermission(req.session.role, 'customers:read_own')) {
+                customers = await customerModel.findByUserId(viewingUser._id);
+            }
+
+            res.render('dashboard', { 
+                customers,
+                role: req.session.role,
+                canDelete: hasPermission(req.session.role, 'customers:delete'),
+                customDomain: viewingUser.customDomain,
+                viewingUser: viewingUser.username
+            });
+        } catch (error) {
+            res.render('error', { message: 'Error loading dashboard' });
+        }
+    });
+
+    app.get('/settings', isAuthenticated, async (req, res) => {
+        const userModel = new User(db);
+        const user = await userModel.findById(req.session.userId);
+        res.render('settings', { customDomain: user.customDomain });
+    });
+
+    app.post('/settings', isAuthenticated, async (req, res) => {
+        const { customDomain } = req.body;
+        const userModel = new User(db);
+        
+        try {
+            const existing = await userModel.findByCustomDomain(customDomain);
+            if (existing && existing._id.toString() !== req.session.userId.toString()) {
+                throw new Error('Domain already taken');
+            }
+            await userModel.updateCustomDomain(req.session.userId, customDomain);
+            req.session.customDomain = customDomain;
+            res.redirect('/dashboard');
+        } catch (error) {
+            res.render('settings', { 
+                customDomain: req.session.customDomain,
+                error: error.message 
+            });
+        }
+    });
+
+    const httpServer = http.createServer((req, res) => {
+        res.writeHead(301, { Location: `https://${req.headers.host}${req.url}` });
+        res.end();
+    });
+
+    const httpsServer = https.createServer(credentials, app);
+
+    httpServer.listen(80, () => {
+        console.log('HTTP Server running on port 80 for redirection');
+    });
+
+    httpsServer.listen(443, () => {
+        console.log('HTTPS Server running on port 443 with HSTS');
+    });
+}
+
+startServer();
+EOF
+
+# Create view files
+echo "Creating view files..."
+cat > views/login.ejs << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Login</h1>
+    <% if (error) { %>
+        <p class="error"><%= error %></p>
+    <% } %>
+    <form method="POST" action="/login">
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+    </form>
+    <p>Don't have an account? <a href="/signup">Sign up</a></p>
+</body>
+</html>
+EOF
+
+cat > views/signup.ejs << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Signup</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Signup</h1>
+    <% if (error) { %>
+        <p class="error"><%= error %></p>
+    <% } %>
+    <form method="POST" action="/signup">
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <input type="text" name="customDomain" placeholder="Custom Domain (optional)">
+        <button type="submit">Sign up</button>
+    </form>
+    <p>Already have an account? <a href="/login">Login</a></p>
+</body>
+</html>
+EOF
+
+cat > views/dashboard.ejs << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Dashboard</h1>
+    <p>Role: <%= role %> | Viewing: <%= viewingUser %>'s Dashboard</p>
+    <p>Custom URL: <%= customDomain %>.localhost:3000</p>
+    <a href="/customer/form">Add Customer</a>
+    <a href="/settings">Settings</a>
+    <a href="/logout">Logout</a>
+    
+    <h2>Customers</h2>
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Phone</th>
+            <th>Document</th>
+            <th>User ID</th>
+            <% if (canDelete) { %>
+                <th>Actions</th>
+            <% } %>
+        </tr>
+        <% customers.forEach(customer => { %>
+            <tr>
+                <td><%= customer.name %></td>
+                <td><%= customer.email %></td>
+                <td><%= customer.phone %></td>
+                <td>
+                    <% if (customer.document) { %>
+                        <a href="/uploads/<%= customer.document %>">View</a>
+                    <% } %>
+                </td>
+                <td><%= customer.userId %></td>
+                <% if (canDelete) { %>
+                    <td>
+                        <a href="/customer/delete/<%= customer._id %>" 
+                           onclick="return confirm('Are you sure?')">Delete</a>
+                    </td>
+                <% } %>
+            </tr>
+        <% }) %>
+    </table>
+</body>
+</html>
+EOF
+
+cat > views/customerForm.ejs << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Customer Form</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Add Customer</h1>
+    <% if (error) { %>
+        <p class="error"><%= error %></p>
+    <% } %>
+    <form method="POST" action="/customer/form" enctype="multipart/form-data">
+        <input type="text" name="name" placeholder="Name" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="tel" name="phone" placeholder="Phone" required>
+        <input type="file" name="document">
+        <button type="submit">Submit</button>
+    </form>
+    <a href="/dashboard">Back to Dashboard</a>
+</body>
+</html>
+EOF
+
+cat > views/error.ejs << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Error</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Error</h1>
+    <p><%= message %></p>
+    <a href="/dashboard">Back to Dashboard</a>
+</body>
+</html>
+EOF
+
+cat > views/settings.ejs << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Settings</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <h1>Settings</h1>
+    <% if (error) { %>
+        <p class="error"><%= error %></p>
+    <% } %>
+    <form method="POST" action="/settings">
+        <label>Custom Domain</label>
+        <input type="text" name="customDomain" value="<%= customDomain %>" required>
+        <button type="submit">Update</button>
+    </form>
+    <a href="/dashboard">Back to Dashboard</a>
+</body>
+</html>
+EOF
+
+# Create CSS file
+echo "Creating CSS file..."
+cat > public/css/style.css << 'EOF'
+body {
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+input, button {
+    display: block;
+    margin: 10px 0;
+    padding: 5px;
+}
+
+.error {
+    color: red;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+}
+EOF
+
+# Create security.txt
+echo "Creating security.txt..."
+cat > public/security.txt << 'EOF'
+Contact: mailto:security@yourdomain.com
+Expires: 2026-02-25T00:00:00.000Z
+Preferred-Languages: en
+Policy: https://yourdomain.com/security-policy
+EOF
+
+# Generate SSL certificates
+echo "Generating self-signed SSL certificates..."
+cd certs
+openssl req -nodes -new -x509 -keyout server.key -out server.cert -days 365 -subj "/CN=localhost" > /dev/null 2>&1
+cd ..
+
+# Install dependencies
+echo "Installing dependencies..."
+npm install
+
+# Make script executable
+chmod +x "$0"
+
+echo "Setup complete!"
+echo "To run the application:"
+echo "1. Ensure MongoDB is running"
+echo "2. Run 'sudo node server.js' (requires root for ports 80/443)"
+echo "3. Access at https://localhost"
+echo "Note: Update /etc/hosts with subdomains for local testing:"
+echo "echo '127.0.0.1 username.localhost' | sudo tee -a /etc/hosts"
