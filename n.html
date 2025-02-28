@@ -426,5 +426,51 @@ main(
         });
     </script>
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h1>Submit National Code and Birth Date</h1>
+    <form id="dataForm">
+        <label for="nationalCode">National Code:</label>
+        <input type="text" id="nationalCode" name="nationalCode" required>
+        <br><br>
+        <label for="birthDate">Birth Date:</label>
+        <input type="date" id="birthDate" name="birthDate" required>
+        <br><br>
+        <button type="button" onclick="submitData()">Submit</button>
+    </form>
+
+    <h2>Results:</h2>
+    <iframe is="x-frame-bypass" id="resultFrame" width="600" height="400" style="border: 1px solid #000;"></iframe>
+
+    <script>
+        function submitData() {
+            // Get form values
+            const nationalCode = document.getElementById('nationalCode').value;
+            const birthDate = document.getElementById('birthDate').value;
+
+            // Construct the URL with query parameters
+            const url = `https://pna.co.ir/PosRequest/Register?nationalCode=${encodeURIComponent(nationalCode)}&birthDate=${encodeURIComponent(birthDate)}`;
+
+            // Set the iframe's source to the constructed URL
+            document.getElementById('resultFrame').src = url;
+        }
+    </script>
+</body>
+</html>
+
 </body>
 </html>
