@@ -3,13 +3,13 @@
 </head>
 
 <body>
-	<div>"C:\Program Files\Google\Chrome\Application\chrome.exe" --disable-web-security --disable-gpu --user-data-dir=%LOCALAPPDATA%\Google\chromeTemp</div>
+	<!--<div>"C:\Program Files\Google\Chrome\Application\chrome.exe" --disable-web-security --disable-gpu --user-data-dir=%LOCALAPPDATA%\Google\chromeTemp</div>
 	<iframe src="https://manati.ir/a.html" title=" Tutorials"></iframe>
 	<iframe src="https://manati.ir/b.html" title=" Tutorials"></iframe>
 	<iframe src="https://manati.ir/c.html" title=" Tutorials"></iframe>
 	https://pa-1ql.pages.dev/form
 	https://imanbarati-github-io.pages.dev/
-	https://soft-mud-5bdd.imanauditore.workers.dev/
+	https://soft-mud-5bdd.imanauditore.workers.dev/-->
 <script>
 async function main() {
 	async function executeRequest0001({
@@ -474,3 +474,109 @@ main(
 
 </body>
 </html>
+<!-- <form id="dataForm">
+        <label for="nationalCode">National Code:</label>
+        <input type="text" id="nationalCode" name="nationalCode" required>
+        <br><br>
+        <label for="birthDate">Birth Date:</label>
+        <input type="date" id="birthDate" name="birthDate" required>
+        <br><br>
+        <button type="button" onclick="submitData()">Submit</button>
+    </form>
+
+    <h2>Results:</h2>
+    <iframe is="x-frame-bypass" id="resultFrame" name="resultFrame"></iframe>
+
+    <script>
+        async function submitData() {
+            // Get form values
+            const nationalCode = document.getElementById('nationalCode').value;
+            const birthDate = document.getElementById('birthDate').value;
+
+            // Create a hidden form dynamically
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/proxy';
+            form.target = 'resultFrame'; // Target the iframe
+
+            // Add nationalCode input
+            const nationalCodeInput = document.createElement('input');
+            nationalCodeInput.type = 'hidden';
+            nationalCodeInput.name = 'nationalCode';
+            nationalCodeInput.value = nationalCode;
+            form.appendChild(nationalCodeInput);
+
+            // Add birthDate input
+            const birthDateInput = document.createElement('input');
+            birthDateInput.type = 'hidden';
+            birthDateInput.name = 'birthDate';
+            birthDateInput.value = birthDate;
+            form.appendChild(birthDateInput);
+
+            // Append the form to the body and submit it
+            document.body.appendChild(form);
+            form.submit();
+
+            // Remove the form after submission
+            document.body.removeChild(form);
+        }
+    </script>
+
+
+
+
+
+
+
+const express = require('express');
+const axios = require('axios');
+const path = require('path');
+const app = express();
+const port = 3000;
+
+// Middleware to parse JSON and form data
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve static files (e.g., index.html)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// CORS headers middleware
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*'); // Allow all origins
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Allow specific methods
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allow specific headers
+    next();
+});
+
+// Proxy endpoint
+app.post('/proxy', async (req, res) => {
+    const { nationalCode, birthDate } = req.body;
+
+    try {
+        // Send POST request to the target website
+        const response = await axios.post('https://pna.co.ir/PosRequest/Register', {
+            nationalCode,
+            birthDate
+        });
+
+        // Return the response from the target website
+        res.send(response.data);
+    } catch (error) {
+        // Handle errors
+        console.error('Error:', error.message);
+        res.status(500).send('Error fetching data from the target website');
+    }
+});
+
+// Serve the frontend HTML file
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Start the server
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
+
+-->
