@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      background-color: black;
+      overflow: hidden;
+    }
+
+    .star {
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      background-color: white;
+      border-radius: 50%;
+      animation: twinkle 2s ease-in-out infinite, drift var(--duration) linear infinite;
+      animation-delay: var(--twinkle-delay), var(--drift-delay);
+    }
+
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 1; }
+    }
+
+    @keyframes drift {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(var(--dx), var(--dy)); }
+    }
+  </style>
+</head>
+<body>
+  <script>
+    function createStar() {
+      const star = document.createElement('div');
+      star.className = 'star';
+
+      // Random position
+      const x = Math.random() * window.innerWidth;
+      const y = Math.random() * window.innerHeight;
+      star.style.left = `${x}px`;
+      star.style.top = `${y}px`;
+
+      // Random drift direction
+      const dx = (Math.random() - 0.5) * 200 + 'px';
+      const dy = (Math.random() - 0.5) * 200 + 'px';
+      const duration = 10 + Math.random() * 20 + 's';
+      const driftDelay = Math.random() * 5 + 's';
+
+      // Random twinkle delay
+      const twinkleDelay = Math.random() * 2 + 's';
+
+      // Set CSS variables
+      star.style.setProperty('--dx', dx);
+      star.style.setProperty('--dy', dy);
+      star.style.setProperty('--duration', duration);
+      star.style.setProperty('--drift-delay', driftDelay);
+      star.style.setProperty('--twinkle-delay', twinkleDelay);
+
+      document.body.appendChild(star);
+
+      // Regenerate after animation ends
+      setTimeout(() => {
+        star.remove();
+        createStar();
+      }, parseFloat(duration) * 1000);
+    }
+
+    for (let i = 0; i < 100; i++) {
+      createStar();
+    }
+  </script>
+</body>
+</html>
